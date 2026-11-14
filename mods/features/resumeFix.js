@@ -1,12 +1,13 @@
 // TizenTube - correctif "vidéo figée" (après extinction/rallumage de la TV)
+// 0) Ferme l'appli quand la TV s'éteint
 // 1) Recharge si la TV sort de veille (visibilitychange / trou dans le minuteur)
 // 2) Recharge si une vidéo est en lecture mais n'avance plus pendant 10 s
 // Sécurité : 2 rechargements max par tranche de 5 min (évite une boucle).
 (function () {
-    const SLEEP_MS = 30000;      // veille > 30 s
-    const TICK_MS = 2000;        // vérification toutes les 2 s
-    const STALL_MS = 10000;      // vidéo bloquée depuis 10 s
-    const WINDOW_MS = 300000;    // fenêtre anti-boucle : 5 min
+    const SLEEP_MS = 30000;
+    const TICK_MS = 2000;
+    const STALL_MS = 10000;
+    const WINDOW_MS = 300000;
     const MAX_RELOADS = 2;
 
     let hiddenAt = 0;
@@ -39,16 +40,27 @@
 
     function reload(reason) {
         if (reloading) return;
-        if (!canReload()) { console.log('[TizenTube resumeFix] limite atteinte: ' + reason); return; }
+        if (!canReload()) return;
         reloading = true;
         console.log('[TizenTube resumeFix] reload: ' + reason);
         toast('Vidéo bloquée - rechargement…');
         setTimeout(function () { location.reload(); }, 1000);
     }
 
+    // TV éteinte : on ferme complètement l'appli
+    function exitApp() {
+        try { tizen.application.getCurrentApplication().exit(); return true; } catch (e) {}
+        try { window.close(); } catch (e) {}
+        return false;
+    }
+
     document.addEventListener('visibilitychange', function () {
-        if (document.hidden) hiddenAt = Date.now();
-        else if (hiddenAt && Date.now() - hiddenAt > SLEEP_MS) reload('visibilitychange');
+        if (document.hidden) {
+            hiddenAt = Date.now();
+            exitApp();
+        } else if (hiddenAt && Date.now() - hiddenAt > SLEEP_MS) {
+            reload('visibilitychange');
+        }
     });
 
     setInterval(function () {
