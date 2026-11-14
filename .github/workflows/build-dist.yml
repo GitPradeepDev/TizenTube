@@ -1,0 +1,32 @@
+name: Build dist for TizenBrew
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip build]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build mods
+        working-directory: mods
+        run: npm install && npm run build
+      - name: Build service
+        working-directory: service
+        run: npm install && npx rollup -c rollup.config.js
+      - name: Commit dist
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -f dist
+          git commit -m "Build dist [skip build]" || echo "Rien a commiter"
+          git push
