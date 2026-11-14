@@ -1,0 +1,56 @@
+name: Auto-update TizenTube
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'   # chaque lundi vers 5h (heure de Paris)
+  workflow_dispatch:        # bouton "Run workflow" pour lancer à la main
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Recuperer les nouveautes officielles
+        id: sync
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git remote add upstream https://github.com/reisxd/TizenTube.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Pas de nouveaute officielle."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            git merge --no-edit upstream/main -m "Sync upstream TizenTube"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+          if [ -z "$(git tag -l '1.0.*')" ]; then echo "changed=true" >> $GITHUB_OUTPUT; fi
+
+      - name: Compiler
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          (cd mods && npm install && npm run build)
+          (cd service && npm install && npx rollup -c rollup.config.js)
+          git add -f dist
+          git commit -m "Build dist [skip build]" || echo "dist inchange"
+
+      - name: Publier une nouvelle version 1.0.x
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          LAST=$(git tag -l '1.0.*' | sort -V | tail -n1)
+          if [ -z "$LAST" ]; then NEXT=1.0.0; else NEXT=1.0.$(( ${LAST##*.} + 1 )); fi
+          git push origin HEAD:main
+          git tag "$NEXT"
+          git push origin "$NEXT"
+          echo "Version publiee : $NEXT"
