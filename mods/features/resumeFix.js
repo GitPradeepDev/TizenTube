@@ -1,8 +1,4 @@
-// TizenTube - correctif "vidéo figée" (après extinction/rallumage de la TV)
-// 0) Ferme l'appli quand la TV s'éteint
-// 1) Recharge si la TV sort de veille (visibilitychange / trou dans le minuteur)
-// 2) Recharge si une vidéo est en lecture mais n'avance plus pendant 10 s
-// Sécurité : 2 rechargements max par tranche de 5 min (évite une boucle).
+// TizenTube - correctif "vidéo figée" + diagnostic (fix3)
 (function () {
     const SLEEP_MS = 30000;
     const TICK_MS = 2000;
@@ -16,14 +12,25 @@
     let stalledSince = 0;
     let reloading = false;
 
-    function toast(msg) {
+    function log(msg) {
+        try {
+            const l = JSON.parse(localStorage.getItem('ttFixLog') || '[]');
+            const d = new Date();
+            l.push(d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2) + ' ' + msg);
+            localStorage.setItem('ttFixLog', JSON.stringify(l.slice(-6)));
+        } catch (e) {}
+    }
+
+    function toast(msg, ms) {
         try {
             const d = document.createElement('div');
             d.textContent = msg;
             d.style.cssText = 'position:fixed;top:5vh;left:50%;transform:translateX(-50%);' +
                 'z-index:999999;background:rgba(0,0,0,.85);color:#fff;font-size:2.5vh;' +
                 'padding:1.5vh 3vh;border-radius:1vh;';
+            d.style.whiteSpace = 'pre-line';
             document.body.appendChild(d);
+            if (ms) setTimeout(function () { d.remove(); }, ms);
         } catch (e) {}
     }
 
@@ -42,19 +49,20 @@
         if (reloading) return;
         if (!canReload()) return;
         reloading = true;
-        console.log('[TizenTube resumeFix] reload: ' + reason);
+        log('reload: ' + reason);
         toast('Vidéo bloquée - rechargement…');
         setTimeout(function () { location.reload(); }, 1000);
     }
 
-    // TV éteinte : on ferme complètement l'appli
     function exitApp() {
-        try { tizen.application.getCurrentApplication().exit(); return true; } catch (e) {}
+        try { tizen.application.getCurrentApplication().exit(); log('exit OK'); return true; }
+        catch (e) { log('exit ERREUR: ' + (e && e.message ? e.message : e)); }
         try { window.close(); } catch (e) {}
         return false;
     }
 
     document.addEventListener('visibilitychange', function () {
+        log('visibilite: ' + (document.hidden ? 'cachee' : 'visible'));
         if (document.hidden) {
             hiddenAt = Date.now();
             exitApp();
@@ -62,6 +70,14 @@
             reload('visibilitychange');
         }
     });
+
+    function showDiag() {
+        let l = [];
+        try { l = JSON.parse(localStorage.getItem('ttFixLog') || '[]'); } catch (e) {}
+        toast('Correctif actif (fix3)\n' + (l.length ? l.join('\n') : 'aucun evenement'), 15000);
+        log('demarrage');
+    }
+    if (document.body) showDiag(); else document.addEventListener('DOMContentLoaded', showDiag);
 
     setInterval(function () {
         const now = Date.now();
@@ -72,6 +88,6 @@
         if (!v || v.paused || v.ended || !v.currentSrc) { lastTime = -1; stalledSince = 0; return; }
         if (v.currentTime !== lastTime) { lastTime = v.currentTime; stalledSince = 0; return; }
         if (!stalledSince) stalledSince = now;
-        else if (now - stalledSince > STALL_MS) reload('video stalled at ' + v.currentTime);
+        else if (now - stalledSince > STALL_MS) reload('video bloquee a ' + Math.round(v.currentTime) + 's');
     }, TICK_MS);
 })();
